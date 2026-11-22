@@ -1,22 +1,21 @@
 package com.example.sirkulacsr
 
+import android.graphics.Color
 import android.os.Bundle
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import com.example.sirkulacsr.trade.TradeApp
+import com.example.sirkulacsr.ui.theme.SirkulaCSRTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        val webView = findViewById<WebView>(R.id.webViewCSR)
-
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-
-        webView.webViewClient = WebViewClient()
-
-        webView.loadUrl("file:///android_asset/dampak_csr.html")
+        val systemBars = SystemBarStyle.light(Color.TRANSPARENT, Color.WHITE)
+        enableEdgeToEdge(statusBarStyle = systemBars, navigationBarStyle = systemBars)
+        setContent {
+            SirkulaCSRTheme(darkTheme = false, dynamicColor = false) { TradeApp() }
+        }
     }
 }
