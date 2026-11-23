@@ -40,7 +40,13 @@ internal fun TradeNavigation(role: TradeRole, screens: List<TradeScreen>, select
 }
 
 @Composable
-internal fun TradeHome(role: TradeRole, profile: Boolean, switch: () -> Unit, navigate: (TradeScreen) -> Unit) {
+internal fun TradeHome(
+    role: TradeRole,
+    profile: Boolean,
+    switch: () -> Unit,
+    signOut: () -> Unit,
+    navigate: (TradeScreen) -> Unit
+) {
     if (!profile) {
         TradeTitle("SIRKULA", 24)
         TradeText("Jual limbah bernilai atau temukan bahan baku untuk usahamu.", 14, TradeMuted)
@@ -61,6 +67,7 @@ internal fun TradeHome(role: TradeRole, profile: Boolean, switch: () -> Unit, na
     listOf(TradeScreen.MESSAGES, TradeScreen.HISTORY, TradeScreen.IMPACT).forEach {
         TradeCard(onClick = { navigate(it) }) { TradeText(it.title(role), weight = FontWeight.SemiBold) }
     }
+    if (profile) TradeButton("Keluar", TradeRed, signOut, Modifier.fillMaxWidth(), outlined = true)
 }
 
 @Composable

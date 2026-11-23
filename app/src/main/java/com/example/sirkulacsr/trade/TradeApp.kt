@@ -45,12 +45,12 @@ private fun destination(offer: TradeOffer, role: TradeRole) = when (offer.status
 }
 
 @Composable
-internal fun TradeApp() {
+internal fun TradeApp(initialRole: TradeRole, signOut: () -> Unit) {
     val store = TradeStore.instance(LocalContext.current)
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val stateHolder = rememberSaveableStateHolder()
-    var role by rememberSaveable { mutableStateOf(TradeRole.MITRA) }
+    var role by rememberSaveable { mutableStateOf(initialRole) }
     var stack by rememberSaveable { mutableStateOf(arrayListOf("HOME:0")) }
     var snapshot by remember { mutableStateOf<TradeSnapshot?>(null) }
     var failedLoad by remember { mutableStateOf(false) }
@@ -159,7 +159,7 @@ internal fun TradeApp() {
                             data == null -> if (failedLoad) TradeButton("Coba Lagi", role.accent, { perform() })
                                 else CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally), color = role.accent)
                             screen == TradeScreen.HOME || screen == TradeScreen.PROFILE ->
-                                TradeHome(role, screen == TradeScreen.PROFILE, ::switchRole) { go(it, root = true) }
+                                TradeHome(role, screen == TradeScreen.PROFILE, ::switchRole, signOut) { go(it, root = true) }
                             screen == TradeScreen.MARKET || screen == TradeScreen.LISTINGS -> BrowseListings(
                                 data.listings, role, screen == TradeScreen.LISTINGS, { go(TradeScreen.LISTING, it) }, { go(it) }
                             )
