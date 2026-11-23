@@ -175,8 +175,13 @@ internal fun TradeApp() {
                             screen == TradeScreen.MESSAGES -> ConversationList(data, role) { go(TradeScreen.CHAT, it) }
                             listing == null -> TradeText("Data tidak tersedia.", 14, TradeMuted)
                             screen == TradeScreen.LISTING -> ListingDetail(listing)
-                            screen == TradeScreen.OFFER || screen == TradeScreen.COUNTER ->
+                            screen == TradeScreen.OFFER && role == TradeRole.MITRA ->
+                                OfferForm(listing, null, amount, { amount = it }, message, { message = it })
+                            screen == TradeScreen.COUNTER && role == TradeRole.PENGHASIL &&
+                                offer?.status == OfferStatus.PENDING ->
                                 OfferForm(listing, offer, amount, { amount = it }, message, { message = it })
+                            screen == TradeScreen.OFFER || screen == TradeScreen.COUNTER ->
+                                TradeText("Formulir ini sudah tidak berlaku. Kembali untuk melihat status terbaru.", 14, TradeMuted)
                             screen == TradeScreen.CHAT -> TradeChat(listing, offer, messages, role, openAgreement) { openOffer(id) }
                             offer == null -> TradeText("Penawaran tidak tersedia.", 14, TradeMuted)
                             screen == TradeScreen.DETAIL -> OfferDetail(listing, offer, messages.lastOrNull { it.price != null }, role)
@@ -200,15 +205,29 @@ internal fun TradeApp() {
                             if (offer == null) go(TradeScreen.OFFER, id) else openOffer(id)
                         }, "Chat Penghasil", openChat)
                     }
-                    TradeScreen.OFFER, TradeScreen.COUNTER -> {
+                    TradeScreen.OFFER -> if (role == TradeRole.MITRA) {
                         val price = amount.toLongOrNull()
-                        val newOffer = screen == TradeScreen.OFFER
                         TradeFooter {
-                            TradeButton(if (newOffer) "Kirim Penawaran" else "Kirim Tawaran Balik", role.accent, {
-                                if (price != null) perform({
-                                    if (newOffer) store.submit(role, id, price, message)
-                                    else store.counter(role, id, price, message)
-                                }) { go(if (newOffer) TradeScreen.SENT else TradeScreen.CHAT, id, replace = true) }
+                            TradeButton("Kirim Penawaran", role.accent, {
+                                if (price != null) {
+                                    var created = false
+                                    perform({ created = store.submit(role, listing.id, price, message) }) { latest ->
+                                        latest.offers[listing.id]?.let { saved ->
+                                            val next = if (created) TradeScreen.SENT else destination(saved, role)
+                                            go(next, listing.id, replace = true)
+                                        }
+                                    }
+                                }
+                            }, Modifier.fillMaxWidth(), enabled = !busy && price != null && price > 0)
+                        }
+                    }
+                    TradeScreen.COUNTER -> if (role == TradeRole.PENGHASIL && offer?.status == OfferStatus.PENDING) {
+                        val price = amount.toLongOrNull()
+                        TradeFooter {
+                            TradeButton("Kirim Tawaran Balik", role.accent, {
+                                if (price != null) perform({ store.counter(role, offer.listingId, price, message) }) {
+                                    go(TradeScreen.CHAT, listing.id, replace = true)
+                                }
                             }, Modifier.fillMaxWidth(), enabled = !busy && price != null && price > 0)
                         }
                     }

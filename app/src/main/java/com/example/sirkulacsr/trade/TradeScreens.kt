@@ -81,9 +81,9 @@ internal fun OfferForm(
         }
         TradeField(
             if (isCounter) "Harga Tawaran Balik" else "Harga yang Ditawarkan",
-            if (amount.isBlank()) "" else rupiah(amount.toLong()),
+            amount,
             { changeAmount(it.filter { char -> char in '0'..'9' }.take(12)) },
-            hint = "Rp0", keyboard = KeyboardType.Number
+            hint = "0", keyboard = KeyboardType.Number, prefix = "Rp"
         )
         TradeField("Pesan (Opsional)", message, { changeMessage(it.take(1_000)) },
             hint = "Tulis pesan...", minLines = 3)
