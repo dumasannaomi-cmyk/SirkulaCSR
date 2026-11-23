@@ -222,13 +222,14 @@ internal fun Avatar(initials: String, background: Color = Mint) {
 @Composable
 internal fun TradeField(
     label: String, value: String, change: (String) -> Unit, hint: String = "",
-    keyboard: KeyboardType = KeyboardType.Text, minLines: Int = 1
+    keyboard: KeyboardType = KeyboardType.Text, minLines: Int = 1, prefix: String? = null
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         TradeText(label, 16)
         OutlinedTextField(
             value = value, onValueChange = change, modifier = Modifier.fillMaxWidth(),
             placeholder = if (hint.isBlank()) null else { { TradeText(hint, 14, TradeMuted) } },
+            prefix = prefix?.let { currency -> { TradeText(currency, 14) } },
             singleLine = minLines == 1, minLines = minLines, maxLines = if (minLines == 1) 1 else 4,
             keyboardOptions = KeyboardOptions(keyboardType = keyboard),
             shape = RoundedCornerShape(8.dp),

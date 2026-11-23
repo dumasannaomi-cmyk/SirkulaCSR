@@ -83,13 +83,14 @@ internal class TradeStore(context: Context) :
             category.trim(), condition.trim(), description.trim())
     }
 
-    fun submit(role: TradeRole, id: Long, price: Long, message: String) = transaction { db ->
+    fun submit(role: TradeRole, id: Long, price: Long, message: String): Boolean = transaction { db ->
         validate(role == TradeRole.MITRA, "Hanya mitra yang dapat mengirim penawaran.")
         validatePrice(price)
         validate(db.read("SELECT id FROM listing WHERE id = ?", arrayOf(id.toString())) {
             number("id")
         }.isNotEmpty(), "Listing tidak ditemukan.")
-        validate(findOffer(db, id) == null, "Penawaran untuk listing ini sudah dikirim.")
+        // A previous tap may have committed before the offer form refreshed.
+        if (findOffer(db, id) != null) return@transaction false
         val now = System.currentTimeMillis()
         db.insertOrThrow("offer", null, ContentValues().apply {
             put("listing_id", id)
@@ -98,6 +99,7 @@ internal class TradeStore(context: Context) :
             put("updated_at", now)
         })
         insertMessage(db, role, id, message, price, now)
+        true
     }
 
     fun counter(role: TradeRole, id: Long, price: Long, message: String) = transaction { db ->
