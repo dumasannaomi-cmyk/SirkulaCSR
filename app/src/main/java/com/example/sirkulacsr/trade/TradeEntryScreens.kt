@@ -42,8 +42,9 @@ internal fun TradeNavigation(role: TradeRole, screens: List<TradeScreen>, select
 @Composable
 internal fun TradeHome(
     role: TradeRole,
+    company: String,
     profile: Boolean,
-    switch: () -> Unit,
+    switch: (() -> Unit)?,
     signOut: () -> Unit,
     navigate: (TradeScreen) -> Unit
 ) {
@@ -52,10 +53,12 @@ internal fun TradeHome(
         TradeText("Jual limbah bernilai atau temukan bahan baku untuk usahamu.", 14, TradeMuted)
     }
     TradeCard {
-        TradeTitle(if (role == TradeRole.MITRA) MITRA_NAME else PENGHASIL_NAME, 16)
+        TradeTitle(company, 16)
         TradeText("Mode ${role.label}", 12, role.accentInk)
-        TradeButton("Beralih ke ${role.other.label}", role.accent, switch, Modifier.fillMaxWidth(),
-            outlined = true, ink = role.accentInk)
+        if (switch != null) {
+            TradeButton("Beralih ke ${role.other.label}", role.accent, switch, Modifier.fillMaxWidth(),
+                outlined = true, ink = role.accentInk)
+        }
     }
     if (!profile) {
         val primary = if (role == TradeRole.MITRA) TradeScreen.MARKET else TradeScreen.INCOMING

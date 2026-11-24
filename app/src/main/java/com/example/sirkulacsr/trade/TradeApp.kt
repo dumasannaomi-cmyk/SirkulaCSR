@@ -45,12 +45,14 @@ private fun destination(offer: TradeOffer, role: TradeRole) = when (offer.status
 }
 
 @Composable
-internal fun TradeApp(initialRole: TradeRole, signOut: () -> Unit) {
+internal fun TradeApp(account: LocalTradeAccount, demo: Boolean, signOut: () -> Unit) {
     val store = TradeStore.instance(LocalContext.current)
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val stateHolder = rememberSaveableStateHolder()
-    var role by rememberSaveable { mutableStateOf(initialRole) }
+    var role by rememberSaveable { mutableStateOf(account.role) }
+    val company = if (role == account.role) account.name
+        else if (role == TradeRole.MITRA) MITRA_NAME else PENGHASIL_NAME
     var stack by rememberSaveable { mutableStateOf(arrayListOf("HOME:0")) }
     var snapshot by remember { mutableStateOf<TradeSnapshot?>(null) }
     var failedLoad by remember { mutableStateOf(false) }
@@ -139,7 +141,8 @@ internal fun TradeApp(initialRole: TradeRole, signOut: () -> Unit) {
             var amount by rememberSaveable { mutableStateOf("") }
             var message by rememberSaveable { mutableStateOf("") }
             val scroll = rememberScrollState()
-            val otherCompany = if (role == TradeRole.MITRA) listing?.company.orEmpty() else MITRA_NAME
+            val otherCompany = if (role == TradeRole.MITRA) listing?.company.orEmpty()
+                else offer?.buyerName ?: MITRA_NAME
 
             LaunchedEffect(screen, messages.size, scroll.maxValue) {
                 if (screen == TradeScreen.CHAT && messages.isNotEmpty()) scroll.scrollTo(scroll.maxValue)
@@ -159,14 +162,15 @@ internal fun TradeApp(initialRole: TradeRole, signOut: () -> Unit) {
                             data == null -> if (failedLoad) TradeButton("Coba Lagi", role.accent, { perform() })
                                 else CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally), color = role.accent)
                             screen == TradeScreen.HOME || screen == TradeScreen.PROFILE ->
-                                TradeHome(role, screen == TradeScreen.PROFILE, ::switchRole, signOut) { go(it, root = true) }
+                                TradeHome(role, company, screen == TradeScreen.PROFILE,
+                                    if (demo) ::switchRole else null, signOut) { go(it, root = true) }
                             screen == TradeScreen.MARKET || screen == TradeScreen.LISTINGS -> BrowseListings(
                                 data.listings, role, screen == TradeScreen.LISTINGS, { go(TradeScreen.LISTING, it) }, { go(it) }
                             )
                             screen == TradeScreen.NEW_LISTING -> NewListing(role) { draft ->
                                 perform({
                                     store.createListing(role, draft.title, draft.price, draft.weight, draft.location,
-                                        draft.category, draft.condition, draft.description)
+                                        draft.category, draft.condition, draft.description, company)
                                 }) { go(TradeScreen.LISTINGS, root = true) }
                             }
                             screen in listPages -> TransactionList(data.listings, data, role, screen, openOffer) {
@@ -211,7 +215,7 @@ internal fun TradeApp(initialRole: TradeRole, signOut: () -> Unit) {
                             TradeButton("Kirim Penawaran", role.accent, {
                                 if (price != null) {
                                     var created = false
-                                    perform({ created = store.submit(role, listing.id, price, message) }) { latest ->
+                                    perform({ created = store.submit(role, listing.id, price, message, company) }) { latest ->
                                         latest.offers[listing.id]?.let { saved ->
                                             val next = if (created) TradeScreen.SENT else destination(saved, role)
                                             go(next, listing.id, replace = true)

@@ -5,10 +5,16 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import java.security.MessageDigest
+import java.security.SecureRandom
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
+
+internal data class LocalTradeAccount(val email: String, val name: String, val role: TradeRole)
 
 /** Persistent on-device data for the two prototype roles. Each write is atomic. */
 internal class TradeStore(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "sirkula_trade.db", null, 1) {
+    SQLiteOpenHelper(context.applicationContext, "sirkula_trade.db", null, 2) {
 
     companion object {
         private var shared: TradeStore? = null
@@ -36,7 +42,8 @@ internal class TradeStore(context: Context) :
                 listing_id INTEGER PRIMARY KEY REFERENCES listing(id),
                 price INTEGER NOT NULL, counter_price INTEGER, status TEXT NOT NULL,
                 buyer_confirmed INTEGER NOT NULL DEFAULT 0,
-                seller_confirmed INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL
+                seller_confirmed INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL,
+                buyer_name TEXT NOT NULL DEFAULT '$MITRA_NAME'
             )"""
         )
         db.execSQL(
@@ -46,6 +53,7 @@ internal class TradeStore(context: Context) :
             )"""
         )
         db.execSQL("CREATE INDEX message_listing ON message(listing_id)")
+        createAccountTable(db)
         insertListing(db, "Kardus Bekas", 150_000, "100", "Jakarta Timur", "Kardus",
             "Baik, kering", "Kardus bekas kegiatan kantor, sudah dipilah, dan siap disalurkan.", "kardus")
         insertListing(db, "Plastik PET", 135_000, "80", "Jakarta Utara", "Plastik",
@@ -54,7 +62,59 @@ internal class TradeStore(context: Context) :
             "Tersaring", "Minyak jelantah dikemas dalam jeriken tertutup.", "minyak")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            createAccountTable(db)
+            db.execSQL("ALTER TABLE offer ADD COLUMN buyer_name TEXT NOT NULL DEFAULT '$MITRA_NAME'")
+        }
+    }
+
+    private fun createAccountTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE local_account (
+                email TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL,
+                salt BLOB NOT NULL, password_hash BLOB NOT NULL
+            )"""
+        )
+    }
+
+    fun register(account: LocalTradeAccount, password: String): LocalTradeAccount {
+        val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        val hash = passwordHash(password, salt)
+        val result = writableDatabase.insertWithOnConflict("local_account", null, ContentValues().apply {
+            put("email", account.email)
+            put("name", account.name)
+            put("role", account.role.name)
+            put("salt", salt)
+            put("password_hash", hash)
+        }, SQLiteDatabase.CONFLICT_IGNORE)
+        require(result != -1L) { "Email sudah terdaftar di perangkat ini." }
+        return account
+    }
+
+    fun account(email: String): LocalTradeAccount? =
+        readableDatabase.read("SELECT email, name, role FROM local_account WHERE email = ?", arrayOf(email)) {
+            decodeAccount()
+        }.singleOrNull()
+
+    fun signIn(email: String, password: String): LocalTradeAccount? =
+        readableDatabase.read("SELECT * FROM local_account WHERE email = ?", arrayOf(email)) {
+            val salt = getBlob(getColumnIndexOrThrow("salt"))
+            val savedHash = getBlob(getColumnIndexOrThrow("password_hash"))
+            if (MessageDigest.isEqual(passwordHash(password, salt), savedHash)) decodeAccount() else null
+        }.singleOrNull()
+
+    private fun Cursor.decodeAccount() =
+        LocalTradeAccount(string("email"), string("name"), TradeRole.valueOf(string("role")))
+
+    private fun passwordHash(password: String, salt: ByteArray): ByteArray {
+        val spec = PBEKeySpec(password.toCharArray(), salt, 1_300_000, 128)
+        return try {
+            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1").generateSecret(spec).encoded
+        } finally {
+            spec.clearPassword()
+        }
+    }
 
     fun snapshot(): TradeSnapshot = transaction { db ->
         val listings = db.read("SELECT * FROM listing ORDER BY id") {
@@ -72,7 +132,7 @@ internal class TradeStore(context: Context) :
 
     fun createListing(
         role: TradeRole, title: String, price: Long, weight: String, location: String,
-        category: String, condition: String, description: String
+        category: String, condition: String, description: String, company: String = PENGHASIL_NAME
     ): Long = transaction { db ->
         validate(role == TradeRole.PENGHASIL, "Hanya penghasil yang dapat membuat listing.")
         validate(title.isNotBlank() && location.isNotBlank() && category.isNotBlank() &&
@@ -80,10 +140,12 @@ internal class TradeStore(context: Context) :
             "Lengkapi informasi listing dan masukkan berat yang valid.")
         validatePrice(price)
         insertListing(db, title.trim(), price, weight.trim(), location.trim(),
-            category.trim(), condition.trim(), description.trim())
+            category.trim(), condition.trim(), description.trim(), company = company)
     }
 
-    fun submit(role: TradeRole, id: Long, price: Long, message: String): Boolean = transaction { db ->
+    fun submit(
+        role: TradeRole, id: Long, price: Long, message: String, buyerName: String = MITRA_NAME
+    ): Boolean = transaction { db ->
         validate(role == TradeRole.MITRA, "Hanya mitra yang dapat mengirim penawaran.")
         validatePrice(price)
         validate(db.read("SELECT id FROM listing WHERE id = ?", arrayOf(id.toString())) {
@@ -94,6 +156,7 @@ internal class TradeStore(context: Context) :
         val now = System.currentTimeMillis()
         db.insertOrThrow("offer", null, ContentValues().apply {
             put("listing_id", id)
+            put("buyer_name", buyerName)
             put("price", price)
             put("status", OfferStatus.PENDING.name)
             put("updated_at", now)
@@ -136,13 +199,14 @@ internal class TradeStore(context: Context) :
 
     private fun insertListing(
         db: SQLiteDatabase, title: String, price: Long, weight: String, location: String,
-        category: String, condition: String, description: String, photo: String? = null
+        category: String, condition: String, description: String, photo: String? = null,
+        company: String = PENGHASIL_NAME
     ) = db.insertOrThrow("listing", null, ContentValues().apply {
         put("title", title)
         put("price", price)
         put("weight", weight)
         put("location", location)
-        put("company", PENGHASIL_NAME)
+        put("company", company)
         put("category", category)
         put("condition", condition)
         put("description", description)
@@ -183,7 +247,7 @@ internal class TradeStore(context: Context) :
     private fun Cursor.decodeOffer() = TradeOffer(
         number("listing_id"), number("price"), optionalNumber("counter_price"),
         OfferStatus.valueOf(string("status")), number("buyer_confirmed") != 0L,
-        number("seller_confirmed") != 0L, number("updated_at")
+        number("seller_confirmed") != 0L, number("updated_at"), string("buyer_name")
     )
 
     private fun validatePrice(price: Long) =

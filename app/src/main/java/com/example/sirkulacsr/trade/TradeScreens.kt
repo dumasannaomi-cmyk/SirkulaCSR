@@ -142,7 +142,7 @@ internal fun TransactionList(
     }
     filteredListings.forEach { listing ->
         val offer = snapshot.offers.getValue(listing.id)
-        val person = if (role == TradeRole.MITRA) listing.company else MITRA_NAME
+        val person = if (role == TradeRole.MITRA) listing.company else offer.buyerName
         TradeCard(onClick = { onOpen(listing.id) }) {
             ListingSummary(listing, rupiah(offer.currentPrice), "$person · ${shortDate(offer.updatedAt)}", offer.status)
         }
@@ -161,7 +161,7 @@ internal fun OfferDetail(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Avatar(if (fromBuyer) "MD" else "GC")
             Column {
-                TradeText(if (fromBuyer) MITRA_NAME else listing.company, weight = FontWeight.SemiBold)
+                TradeText(if (fromBuyer) offer.buyerName else listing.company, weight = FontWeight.SemiBold)
                 TradeText(
                     (if (fromBuyer) "Pengepul/Mitra" else "Penghasil Limbah") + " · " + shortDate(offer.updatedAt),
                     12, TradeMuted
@@ -195,7 +195,7 @@ internal fun Agreement(listing: WasteListing, offer: TradeOffer) {
         TradeText("GC   ${listing.company}", 12, weight = FontWeight.SemiBold)
         TradeText("         Penghasil Limbah", 12, TradeMuted)
         HorizontalDivider(color = TradeLine)
-        TradeText("MD   $MITRA_NAME", 12, weight = FontWeight.SemiBold)
+        TradeText("MD   ${offer.buyerName}", 12, weight = FontWeight.SemiBold)
         TradeText("         Pengepul/Mitra", 12, TradeMuted)
     }
     TradeNote("Pembayaran dan penyerahan limbah dilakukan sesuai kesepakatan langsung melalui chat. SIRKULA tidak memproses pembayaran.")
@@ -216,7 +216,7 @@ internal fun TradeStatus(
             "Lakukan konfirmasi hanya jika pembayaran dan serah terima limbah sudah benar-benar selesai.")
         TradeScreen.WAITING -> TradeStatusHero(R.drawable.keiza_clock, 36, Color(0xFFF78D00), PaleGold,
             "Menunggu Konfirmasi", if (offer.confirmed(role)) "Konfirmasi kamu sudah tercatat. " +
-                "Menunggu konfirmasi dari ${if (role == TradeRole.MITRA) listing.company else MITRA_NAME}."
+                "Menunggu konfirmasi dari ${if (role == TradeRole.MITRA) listing.company else offer.buyerName}."
             else "Pihak lain sudah mengonfirmasi. Selesaikan konfirmasi untuk menutup transaksi.")
         TradeScreen.COMPLETE -> TradeStatusHero(R.drawable.keiza_success, 38, Color.White, Color(0xFF12B268),
             "Transaksi Selesai!", "Penyelesaian transaksi telah dikonfirmasi oleh kedua pihak.")
@@ -243,7 +243,7 @@ internal fun TradeStatus(
                 TradeScreen.COMPLETE -> {
                     TradeFact("Harga Akhir", rupiah(offer.currentPrice))
                     TradeFact("Penghasil", listing.company)
-                    TradeFact("Mitra", MITRA_NAME)
+                    TradeFact("Mitra", offer.buyerName)
                     TradeFact("Tanggal", dateFormat(offer.updatedAt, "d MMMM yyyy"))
                 }
                 TradeScreen.REJECTED -> TradeFact("Status", "Ditolak")
@@ -334,7 +334,8 @@ internal fun ConversationList(snapshot: TradeSnapshot, role: TradeRole, onChat: 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Avatar(if (role == TradeRole.MITRA) "GC" else "MD")
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    TradeText(if (role == TradeRole.MITRA) listing.company else MITRA_NAME, weight = FontWeight.SemiBold)
+                    TradeText(if (role == TradeRole.MITRA) listing.company
+                        else snapshot.offers[listing.id]?.buyerName ?: MITRA_NAME, weight = FontWeight.SemiBold)
                     TradeText("${if (role == TradeRole.MITRA) "Penghasil Limbah" else "Pengepul/Mitra"} · " +
                         "${listing.title}, ${listing.weight} kg", 10, TradeMuted)
                 }
