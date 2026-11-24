@@ -21,8 +21,8 @@ android {
         applicationId = "com.example.sirkulacsr"
         minSdk = 24
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = if (sirkulaApiUrl.isEmpty()) "1.2-local" else "1.2-cloud"
         buildConfigField("String", "SIRKULA_API_URL", "\"$sirkulaApiUrl\"")
 
         testInstrumentationRunner =

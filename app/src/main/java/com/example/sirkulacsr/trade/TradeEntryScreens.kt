@@ -61,6 +61,10 @@ internal fun TradeHome(
         }
     }
     if (!profile) {
+        if (role == TradeRole.PENGHASIL) {
+            TradeButton("Hitung Nilai Limbah", role.accent, { navigate(TradeScreen.ESTIMASI) },
+                Modifier.fillMaxWidth())
+        }
         val primary = if (role == TradeRole.MITRA) TradeScreen.MARKET else TradeScreen.INCOMING
         TradeButton(primary.title(role), role.accent, { navigate(primary) }, Modifier.fillMaxWidth())
         TradeCard(onClick = { navigate(TradeScreen.TRANSACTIONS) }) {

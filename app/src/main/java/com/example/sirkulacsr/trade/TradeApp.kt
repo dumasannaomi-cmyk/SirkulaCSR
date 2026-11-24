@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.sirkulacsr.ui.estimasi.EstimasiRoute
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -24,7 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 internal enum class TradeScreen(private val heading: String) {
-    HOME("Beranda"), MARKET("Marketplace"), LISTINGS("Listing"),
+    HOME("Beranda"), ESTIMASI("Estimasi Limbah"), MARKET("Marketplace"), LISTINGS("Listing"),
     NEW_LISTING("Buat Listing Baru"), LISTING("Detail Listing"), OFFER("Ajukan Penawaran"),
     SENT("Penawaran Terkirim"), INCOMING("Penawaran Masuk"), DETAIL("Detail Penawaran"),
     COUNTER("Tawar Balik"), CHAT("Chat"), MESSAGES("Pesan"), AGREEMENT("Detail Kesepakatan"),
@@ -142,6 +143,24 @@ internal fun TradeApp(account: LocalTradeAccount, demo: Boolean, repository: Tra
         }
     }
     BackHandler(stack.size > 1, ::back)
+    if (screen == TradeScreen.ESTIMASI) {
+        Box(Modifier.fillMaxSize().background(Color.White).windowInsetsPadding(WindowInsets.safeDrawing)) {
+            EstimasiRoute(
+                onJualSekarang = { go(TradeScreen.NEW_LISTING) },
+                onBukaChat = { go(TradeScreen.MESSAGES) },
+                onLihatSemua = { go(TradeScreen.LISTINGS, root = true) },
+                onNavigasi = { halaman ->
+                    when (halaman) {
+                        "Beranda" -> go(TradeScreen.HOME, root = true)
+                        "Listing" -> go(TradeScreen.LISTINGS, root = true)
+                        "Dampak" -> go(TradeScreen.IMPACT, root = true)
+                        "Profil" -> go(TradeScreen.PROFILE, root = true)
+                    }
+                }
+            )
+        }
+        return
+    }
     val navItems = if (role == TradeRole.MITRA)
         listOf(TradeScreen.HOME, TradeScreen.MARKET, TradeScreen.TRANSACTIONS, TradeScreen.PROFILE)
     else listOf(TradeScreen.HOME, TradeScreen.LISTINGS, TradeScreen.IMPACT, TradeScreen.PROFILE)
