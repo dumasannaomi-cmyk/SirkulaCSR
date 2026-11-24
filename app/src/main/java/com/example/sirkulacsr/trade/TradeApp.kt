@@ -15,11 +15,11 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -45,8 +45,8 @@ private fun destination(offer: TradeOffer, role: TradeRole) = when (offer.status
 }
 
 @Composable
-internal fun TradeApp(account: LocalTradeAccount, demo: Boolean, signOut: () -> Unit) {
-    val store = TradeStore.instance(LocalContext.current)
+internal fun TradeApp(account: LocalTradeAccount, demo: Boolean, repository: TradeData, signOut: () -> Unit) {
+    val store = repository
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val stateHolder = rememberSaveableStateHolder()
@@ -57,6 +57,7 @@ internal fun TradeApp(account: LocalTradeAccount, demo: Boolean, signOut: () -> 
     var snapshot by remember { mutableStateOf<TradeSnapshot?>(null) }
     var failedLoad by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var refreshGeneration by remember { mutableIntStateOf(0) }
     val entry = stack.last()
     val screen = TradeScreen.valueOf(entry.substringBefore(':'))
     val id = entry.substringAfter(':').toLong()
@@ -87,6 +88,7 @@ internal fun TradeApp(account: LocalTradeAccount, demo: Boolean, signOut: () -> 
 
     fun perform(write: () -> Unit = {}, after: (TradeSnapshot) -> Unit = {}) {
         if (busy) return
+        refreshGeneration++
         busy = true
         scope.launch {
             try {
@@ -120,7 +122,25 @@ internal fun TradeApp(account: LocalTradeAccount, demo: Boolean, signOut: () -> 
         stack = arrayListOf("HOME:0")
     }
 
-    LaunchedEffect(Unit) { perform() }
+    LaunchedEffect(store) {
+        perform()
+        if (store is CloudTradeStore) {
+            while (true) {
+                delay(5_000)
+                if (!busy) {
+                    val generation = refreshGeneration
+                    try {
+                        val latest = withContext(Dispatchers.IO) { store.snapshot() }
+                        if (!busy && generation == refreshGeneration) snapshot = latest
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // Keep the last snapshot available during a transient network failure.
+                    }
+                }
+            }
+        }
+    }
     BackHandler(stack.size > 1, ::back)
     val navItems = if (role == TradeRole.MITRA)
         listOf(TradeScreen.HOME, TradeScreen.MARKET, TradeScreen.TRANSACTIONS, TradeScreen.PROFILE)
@@ -207,7 +227,7 @@ internal fun TradeApp(account: LocalTradeAccount, demo: Boolean, signOut: () -> 
                     TradeScreen.LISTING -> if (role == TradeRole.MITRA) {
                         TradeActions(role, if (offer == null) "Ajukan Penawaran" else "Lihat Penawaran", {
                             if (offer == null) go(TradeScreen.OFFER, id) else openOffer(id)
-                        }, "Chat Penghasil", openChat)
+                        }, "Chat Penghasil".takeIf { store !is CloudTradeStore || offer != null }, openChat)
                     }
                     TradeScreen.OFFER -> if (role == TradeRole.MITRA) {
                         val price = amount.toLongOrNull()

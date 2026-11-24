@@ -40,6 +40,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.sirkulacsr.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -59,6 +60,32 @@ private val demoAccounts = listOf(demoMitra, demoPenghasil).associateBy(LocalTra
 internal fun SirkulaApp() {
     val context = LocalContext.current
     val store = remember(context) { TradeStore.instance(context) }
+    if (BuildConfig.SIRKULA_API_URL.isNotEmpty()) {
+        val api = remember { CloudTradeApi(BuildConfig.SIRKULA_API_URL) }
+        val scope = rememberCoroutineScope()
+        var session by remember { mutableStateOf<CloudSession?>(null) }
+        val active = session
+        if (active == null) {
+            TradeLogin(store, api) { account, token -> session = CloudSession(account, checkNotNull(token)) }
+        } else {
+            val cloudStore = remember(active.token) { CloudTradeStore(api, active.token) }
+            TradeApp(active.account, demo = false, repository = cloudStore) {
+                session = null
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            api.signOut(active.token)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            // The local session is already cleared.
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
     val prefs = remember(context) {
         context.getSharedPreferences("sirkula_demo_session", Context.MODE_PRIVATE)
     }
@@ -78,12 +105,12 @@ internal fun SirkulaApp() {
     if (loading) {
         return
     } else if (active == null) {
-        TradeLogin(store) { selected ->
+        TradeLogin(store) { selected, _ ->
             prefs.edit().remove(SESSION_ROLE).putString(SESSION_EMAIL, selected.email).apply()
             account = selected
         }
     } else {
-        TradeApp(active, active.email in demoAccounts) {
+        TradeApp(active, active.email in demoAccounts, store) {
             prefs.edit().remove(SESSION_ROLE).remove(SESSION_EMAIL).apply()
             account = null
         }
@@ -91,7 +118,11 @@ internal fun SirkulaApp() {
 }
 
 @Composable
-private fun TradeLogin(store: TradeStore, signIn: (LocalTradeAccount) -> Unit) {
+private fun TradeLogin(
+    store: TradeStore,
+    api: CloudTradeApi? = null,
+    signIn: (LocalTradeAccount, String?) -> Unit
+) {
     var email by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
@@ -113,7 +144,7 @@ private fun TradeLogin(store: TradeStore, signIn: (LocalTradeAccount) -> Unit) {
             !Patterns.EMAIL_ADDRESS.matcher(address).matches() -> "Masukkan alamat email yang valid."
             inputPassword.length < 6 -> "Gunakan minimal 6 karakter untuk kata sandi."
             isRegistration && newAccount.name.isBlank() -> "Masukkan nama usaha."
-            isRegistration && address in demoAccounts -> "Email ini dipakai untuk akun demo."
+            api == null && isRegistration && address in demoAccounts -> "Email ini dipakai untuk akun demo."
             else -> null
         }
         if (error != null) return
@@ -121,19 +152,25 @@ private fun TradeLogin(store: TradeStore, signIn: (LocalTradeAccount) -> Unit) {
         focus.clearFocus()
         scope.launch {
             try {
-                val selected = withContext(Dispatchers.IO) {
-                    if (isRegistration) store.register(newAccount, inputPassword)
-                    else if (address in demoAccounts) demoAccounts[address]?.takeIf { inputPassword == DEMO_PASSWORD }
-                    else store.signIn(address, inputPassword)
+                if (api != null) {
+                    val session = withContext(Dispatchers.IO) { api.authenticate(newAccount, inputPassword, isRegistration) }
+                    signIn(session.account, session.token)
+                } else {
+                    val selected = withContext(Dispatchers.IO) {
+                        if (isRegistration) store.register(newAccount, inputPassword)
+                        else if (address in demoAccounts) demoAccounts[address]?.takeIf { inputPassword == DEMO_PASSWORD }
+                        else store.signIn(address, inputPassword)
+                    }
+                    if (selected != null) signIn(selected, null)
+                    else error = "Email atau kata sandi tidak sesuai. Akun lokal dibuat di HP ini."
                 }
-                if (selected != null) signIn(selected)
-                else error = "Email atau kata sandi tidak sesuai. Akun lokal dibuat di HP ini."
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (problem: IllegalArgumentException) {
                 error = problem.message ?: "Periksa kembali data akun."
             } catch (_: Exception) {
-                error = "Data akun lokal belum bisa dibuka. Coba lagi."
+                error = if (api == null) "Data akun lokal belum bisa dibuka. Coba lagi."
+                    else "Periksa koneksi internet dan coba lagi."
             } finally {
                 busy = false
             }
@@ -153,8 +190,8 @@ private fun TradeLogin(store: TradeStore, signIn: (LocalTradeAccount) -> Unit) {
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             TradeText("SIRKULA", 16, TradeGreen, weight = FontWeight.Bold)
-            TradeTitle(if (registering) "Daftar akun lokal" else "Masuk ke akunmu", 28)
-            TradeText("Akun dan transaksi tersimpan di HP ini.", 14, TradeMuted)
+            TradeTitle(if (!registering) "Masuk ke akunmu" else if (api == null) "Daftar akun lokal" else "Daftar akun", 28)
+            if (api == null) TradeText("Akun dan transaksi tersimpan di HP ini.", 14, TradeMuted)
         }
         TradeCard {
             if (registering) {
@@ -208,7 +245,7 @@ private fun TradeLogin(store: TradeStore, signIn: (LocalTradeAccount) -> Unit) {
                 TradeText(if (registering) "Sudah punya akun? Masuk" else "Belum punya akun? Daftar")
             }
         }
-        if (!registering) TradeCard {
+        if (!registering && api == null) TradeCard {
             TradeTitle("Akun demo", 16)
             TradeText("Pilih peran untuk mengisi email. Kata sandi demo $DEMO_PASSWORD.", 13, TradeMuted)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

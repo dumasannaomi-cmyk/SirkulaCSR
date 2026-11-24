@@ -14,7 +14,7 @@ internal data class LocalTradeAccount(val email: String, val name: String, val r
 
 /** Persistent on-device data for the two prototype roles. Each write is atomic. */
 internal class TradeStore(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "sirkula_trade.db", null, 2) {
+    SQLiteOpenHelper(context.applicationContext, "sirkula_trade.db", null, 2), TradeData {
 
     companion object {
         private var shared: TradeStore? = null
@@ -116,7 +116,7 @@ internal class TradeStore(context: Context) :
         }
     }
 
-    fun snapshot(): TradeSnapshot = transaction { db ->
+    override fun snapshot(): TradeSnapshot = transaction { db ->
         val listings = db.read("SELECT * FROM listing ORDER BY id") {
             WasteListing(number("id"), string("title"), number("price"), string("weight"),
                 string("location"), string("company"), string("category"), string("condition"),
@@ -130,9 +130,9 @@ internal class TradeStore(context: Context) :
         TradeSnapshot(listings, offers.associateBy(TradeOffer::listingId), messages)
     }
 
-    fun createListing(
+    override fun createListing(
         role: TradeRole, title: String, price: Long, weight: String, location: String,
-        category: String, condition: String, description: String, company: String = PENGHASIL_NAME
+        category: String, condition: String, description: String, company: String
     ): Long = transaction { db ->
         validate(role == TradeRole.PENGHASIL, "Hanya penghasil yang dapat membuat listing.")
         validate(title.isNotBlank() && location.isNotBlank() && category.isNotBlank() &&
@@ -143,8 +143,8 @@ internal class TradeStore(context: Context) :
             category.trim(), condition.trim(), description.trim(), company = company)
     }
 
-    fun submit(
-        role: TradeRole, id: Long, price: Long, message: String, buyerName: String = MITRA_NAME
+    override fun submit(
+        role: TradeRole, id: Long, price: Long, message: String, buyerName: String
     ): Boolean = transaction { db ->
         validate(role == TradeRole.MITRA, "Hanya mitra yang dapat mengirim penawaran.")
         validatePrice(price)
@@ -165,7 +165,7 @@ internal class TradeStore(context: Context) :
         true
     }
 
-    fun counter(role: TradeRole, id: Long, price: Long, message: String) = transaction { db ->
+    override fun counter(role: TradeRole, id: Long, price: Long, message: String) = transaction { db ->
         val offer = requireOffer(db, id)
         validate(role == TradeRole.PENGHASIL && offer.status == OfferStatus.PENDING,
             "Penawaran ini sudah ditanggapi.")
@@ -175,7 +175,7 @@ internal class TradeStore(context: Context) :
         insertMessage(db, role, id, message, price, now)
     }
 
-    fun respond(role: TradeRole, id: Long, accept: Boolean) = transaction { db ->
+    override fun respond(role: TradeRole, id: Long, accept: Boolean) = transaction { db ->
         val offer = requireOffer(db, id)
         validate(offer.canRespond(role), "Penawaran ini sudah ditanggapi.")
         val now = System.currentTimeMillis()
@@ -184,13 +184,13 @@ internal class TradeStore(context: Context) :
         if (accept) insertMessage(db, role, id, "Baik, kami setuju di ${rupiah(offer.currentPrice)}.", null, now)
     }
 
-    fun send(role: TradeRole, id: Long, message: String) = transaction { db ->
+    override fun send(role: TradeRole, id: Long, message: String) = transaction { db ->
         validate(message.trim().isNotEmpty(), "Masukkan pesan.")
         validate(findOffer(db, id)?.status != OfferStatus.REJECTED, "Penawaran ini sudah ditutup.")
         insertMessage(db, role, id, message, null, System.currentTimeMillis())
     }
 
-    fun confirm(role: TradeRole, id: Long) = transaction { db ->
+    override fun confirm(role: TradeRole, id: Long) = transaction { db ->
         val offer = requireOffer(db, id)
         if (offer.confirmed(role)) return@transaction
         val column = if (role == TradeRole.MITRA) "buyer_confirmed" else "seller_confirmed"
