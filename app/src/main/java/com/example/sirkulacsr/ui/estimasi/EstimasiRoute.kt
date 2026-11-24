@@ -1,4 +1,3 @@
-
 package com.example.sirkulacsr.ui.estimasi
 
 import androidx.compose.foundation.layout.Box
@@ -47,6 +46,7 @@ fun EstimasiRoute(
         modifier = Modifier.fillMaxSize()
     ) {
         EstimasiScreen(
+            isLoading = uiState.isLoading,
             nilaiEstimasi = uiState.hasilEstimasi
                 ?.totalEstimasiRupiah,
             onHitungNilai = { jenis, jumlah, satuan ->
