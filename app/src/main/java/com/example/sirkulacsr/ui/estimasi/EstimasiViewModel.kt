@@ -1,4 +1,3 @@
-
 package com.example.sirkulacsr.ui.estimasi
 
 import androidx.lifecycle.ViewModel
@@ -42,16 +41,15 @@ class EstimasiViewModel(
     ) {
         if (_uiState.value.isLoading) return
 
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                hasilEstimasi = null,
+                errorMessage = null
+            )
+        }
+
         viewModelScope.launch {
-
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    hasilEstimasi = null,
-                    errorMessage = null
-                )
-            }
-
             try {
                 val hasil = repository.hitungDanSimpan(
                     jenisLimbah = jenisLimbah,
@@ -89,6 +87,7 @@ class EstimasiViewModel(
                 repository.hapusEstimasi(id)
             } catch (e: CancellationException) {
                 throw e
+
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -107,11 +106,9 @@ class EstimasiViewModel(
     }
 
     companion object {
-
         fun factory(
             repository: EstimasiRepository
         ): ViewModelProvider.Factory {
-
             return object : ViewModelProvider.Factory {
 
                 @Suppress("UNCHECKED_CAST")

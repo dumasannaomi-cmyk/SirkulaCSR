@@ -70,6 +70,7 @@ private data class ListingData(
 fun EstimasiScreen(
     modifier: Modifier = Modifier,
     nilaiEstimasi: Long? = null,
+    isLoading: Boolean = false,
     onHitungNilai: ((String, Double, String) -> Unit)? = null,
     onJualSekarang: (() -> Unit)? = null,
     onBukaChat: (() -> Unit)? = null,
@@ -479,7 +480,7 @@ fun EstimasiScreen(
                             .height(48.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(Hijau)
-                            .clickable {
+                            .clickable(enabled = !isLoading) {
                                 val angka = jumlah.toDoubleOrNull()
 
                                 when {
@@ -512,7 +513,7 @@ fun EstimasiScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Hitung Nilai",
+                            text = if (isLoading) "Menghitung..." else "Hitung Nilai",
                             fontFamily = InterEstimasi,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
