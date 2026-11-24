@@ -5,6 +5,11 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val sirkulaApiUrl = providers.gradleProperty("sirkulaApiUrl").orElse("").get().trimEnd('/')
+require(sirkulaApiUrl.isEmpty() || Regex("https://[A-Za-z0-9.-]+").matches(sirkulaApiUrl)) {
+    "sirkulaApiUrl must be an HTTPS origin, for example https://sirkula.example.com."
+}
+
 android {
     namespace = "com.example.sirkulacsr"
 
@@ -16,8 +21,9 @@ android {
         applicationId = "com.example.sirkulacsr"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+        buildConfigField("String", "SIRKULA_API_URL", "\"$sirkulaApiUrl\"")
 
         testInstrumentationRunner =
             "androidx.test.runner.AndroidJUnitRunner"
@@ -38,10 +44,12 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
 dependencies {
+    implementation("com.google.code.gson:gson:2.13.1")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

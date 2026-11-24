@@ -39,7 +39,8 @@ internal data class TradeOffer(
     val status: OfferStatus,
     val buyerConfirmed: Boolean,
     val sellerConfirmed: Boolean,
-    val updatedAt: Long
+    val updatedAt: Long,
+    val buyerName: String = MITRA_NAME
 ) {
     val currentPrice: Long get() = counterPrice ?: price
 

@@ -1,6 +1,7 @@
 package com.example.sirkulacsr.trade
 
 import android.content.Context
+import android.util.Patterns
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,9 +24,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -37,62 +40,146 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.sirkulacsr.BuildConfig
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val MITRA_EMAIL = "mitra@sirkula.example"
 private const val PENGHASIL_EMAIL = "penghasil@sirkula.example"
 private const val DEMO_PASSWORD = "sirkula123"
 private const val SESSION_ROLE = "signed_in_demo_role"
+private const val SESSION_EMAIL = "local_account_email"
+
+private val demoMitra = LocalTradeAccount(MITRA_EMAIL, MITRA_NAME, TradeRole.MITRA)
+private val demoPenghasil = LocalTradeAccount(PENGHASIL_EMAIL, PENGHASIL_NAME, TradeRole.PENGHASIL)
+private val demoAccounts = listOf(demoMitra, demoPenghasil).associateBy(LocalTradeAccount::email)
 
 @Composable
 internal fun SirkulaApp() {
     val context = LocalContext.current
+    val store = remember(context) { TradeStore.instance(context) }
+    if (BuildConfig.SIRKULA_API_URL.isNotEmpty()) {
+        val api = remember { CloudTradeApi(BuildConfig.SIRKULA_API_URL) }
+        val scope = rememberCoroutineScope()
+        var session by remember { mutableStateOf<CloudSession?>(null) }
+        val active = session
+        if (active == null) {
+            TradeLogin(store, api) { account, token -> session = CloudSession(account, checkNotNull(token)) }
+        } else {
+            val cloudStore = remember(active.token) { CloudTradeStore(api, active.token) }
+            TradeApp(active.account, demo = false, repository = cloudStore) {
+                session = null
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            api.signOut(active.token)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            // The local session is already cleared.
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
     val prefs = remember(context) {
         context.getSharedPreferences("sirkula_demo_session", Context.MODE_PRIVATE)
     }
-    var signedInRole by remember(prefs) {
-        val savedRole = prefs.getString(SESSION_ROLE, null)
-        mutableStateOf(TradeRole.entries.firstOrNull { it.name == savedRole })
+    var account by remember(prefs) { mutableStateOf<LocalTradeAccount?>(null) }
+    var loading by remember(prefs) { mutableStateOf(true) }
+    LaunchedEffect(prefs) {
+        try {
+            val email = prefs.getString(SESSION_EMAIL, null)
+            account = if (email != null) demoAccounts[email] ?: withContext(Dispatchers.IO) { store.account(email) }
+                else demoAccounts.values.firstOrNull { it.role.name == prefs.getString(SESSION_ROLE, null) }
+        } finally {
+            loading = false
+        }
     }
 
-    val role = signedInRole
-    if (role == null) {
-        TradeLogin { selectedRole ->
-            prefs.edit().putString(SESSION_ROLE, selectedRole.name).apply()
-            signedInRole = selectedRole
+    val active = account
+    if (loading) {
+        return
+    } else if (active == null) {
+        TradeLogin(store) { selected, _ ->
+            prefs.edit().remove(SESSION_ROLE).putString(SESSION_EMAIL, selected.email).apply()
+            account = selected
         }
     } else {
-        TradeApp(role) {
-            prefs.edit().remove(SESSION_ROLE).apply()
-            signedInRole = null
+        TradeApp(active, active.email in demoAccounts, store) {
+            prefs.edit().remove(SESSION_ROLE).remove(SESSION_EMAIL).apply()
+            account = null
         }
     }
 }
 
 @Composable
-private fun TradeLogin(signIn: (TradeRole) -> Unit) {
+private fun TradeLogin(
+    store: TradeStore,
+    api: CloudTradeApi? = null,
+    signIn: (LocalTradeAccount, String?) -> Unit
+) {
     var email by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var registering by rememberSaveable { mutableStateOf(false) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var role by rememberSaveable { mutableStateOf(TradeRole.MITRA) }
+    var busy by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
-    val emailRole = when (email.trim().lowercase()) {
-        MITRA_EMAIL -> TradeRole.MITRA
-        PENGHASIL_EMAIL -> TradeRole.PENGHASIL
-        else -> null
-    }
 
     fun submit() {
-        if (emailRole != null && password == DEMO_PASSWORD) {
-            focus.clearFocus()
-            signIn(emailRole)
-        } else {
-            error = true
+        if (busy) return
+        val address = email.trim().lowercase()
+        val inputPassword = password
+        val newAccount = LocalTradeAccount(address, name.trim(), role)
+        val isRegistration = registering
+        error = when {
+            !Patterns.EMAIL_ADDRESS.matcher(address).matches() -> "Masukkan alamat email yang valid."
+            inputPassword.length < 6 -> "Gunakan minimal 6 karakter untuk kata sandi."
+            isRegistration && newAccount.name.isBlank() -> "Masukkan nama usaha."
+            api == null && isRegistration && address in demoAccounts -> "Email ini dipakai untuk akun demo."
+            else -> null
+        }
+        if (error != null) return
+        busy = true
+        focus.clearFocus()
+        scope.launch {
+            try {
+                if (api != null) {
+                    val session = withContext(Dispatchers.IO) { api.authenticate(newAccount, inputPassword, isRegistration) }
+                    signIn(session.account, session.token)
+                } else {
+                    val selected = withContext(Dispatchers.IO) {
+                        if (isRegistration) store.register(newAccount, inputPassword)
+                        else if (address in demoAccounts) demoAccounts[address]?.takeIf { inputPassword == DEMO_PASSWORD }
+                        else store.signIn(address, inputPassword)
+                    }
+                    if (selected != null) signIn(selected, null)
+                    else error = "Email atau kata sandi tidak sesuai. Akun lokal dibuat di HP ini."
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (problem: IllegalArgumentException) {
+                error = problem.message ?: "Periksa kembali data akun."
+            } catch (_: Exception) {
+                error = if (api == null) "Data akun lokal belum bisa dibuka. Coba lagi."
+                    else "Periksa koneksi internet dan coba lagi."
+            } finally {
+                busy = false
+            }
         }
     }
 
     fun updateEmail(value: String) {
         email = value.take(120)
-        error = false
+        error = null
     }
 
     Column(
@@ -103,17 +190,27 @@ private fun TradeLogin(signIn: (TradeRole) -> Unit) {
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             TradeText("SIRKULA", 16, TradeGreen, weight = FontWeight.Bold)
-            TradeTitle("Masuk ke akunmu", 28)
-            TradeText("Gunakan akun demo untuk mencoba penawaran dan transaksi.", 14, TradeMuted)
+            TradeTitle(if (!registering) "Masuk ke akunmu" else if (api == null) "Daftar akun lokal" else "Daftar akun", 28)
+            if (api == null) TradeText("Akun dan transaksi tersimpan di HP ini.", 14, TradeMuted)
         }
         TradeCard {
+            if (registering) {
+                TradeField("Nama usaha", name, { name = it.take(100) })
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TradeRole.entries.forEach { option ->
+                        TradeButton(option.label, option.accent, { role = option }, Modifier.weight(1f),
+                            outlined = role != option, enabled = !busy)
+                    }
+                }
+            }
             OutlinedTextField(
                 value = email,
                 onValueChange = ::updateEmail,
                 modifier = Modifier.fillMaxWidth(),
                 label = { TradeText("Email") },
                 singleLine = true,
-                isError = error,
+                isError = error != null,
+                enabled = !busy,
                 shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TradeGreen),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next)
@@ -122,12 +219,13 @@ private fun TradeLogin(signIn: (TradeRole) -> Unit) {
                 value = password,
                 onValueChange = {
                     password = it.take(120)
-                    error = false
+                    error = null
                 },
                 modifier = Modifier.fillMaxWidth(),
                 label = { TradeText("Kata sandi") },
                 singleLine = true,
-                isError = error,
+                isError = error != null,
+                enabled = !busy,
                 shape = RoundedCornerShape(8.dp),
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = TradeGreen),
                 visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
@@ -139,11 +237,15 @@ private fun TradeLogin(signIn: (TradeRole) -> Unit) {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { submit() })
             )
-            if (error) TradeText("Email atau kata sandi demo tidak sesuai.", 13, TradeRed)
+            error?.let { TradeText(it, 13, TradeRed) }
             Spacer(Modifier.height(2.dp))
-            TradeButton("Masuk", TradeGreen, ::submit, Modifier.fillMaxWidth())
+            TradeButton(if (registering) "Daftar" else "Masuk", TradeGreen, ::submit,
+                Modifier.fillMaxWidth(), enabled = !busy)
+            TextButton(enabled = !busy, onClick = { registering = !registering; error = null }) {
+                TradeText(if (registering) "Sudah punya akun? Masuk" else "Belum punya akun? Daftar")
+            }
         }
-        TradeCard {
+        if (!registering && api == null) TradeCard {
             TradeTitle("Akun demo", 16)
             TradeText("Pilih peran untuk mengisi email. Kata sandi demo $DEMO_PASSWORD.", 13, TradeMuted)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
