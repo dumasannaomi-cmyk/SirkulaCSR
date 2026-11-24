@@ -1,6 +1,7 @@
 .gradle
 .kotlin
 build
+target
 data
 *.db
 *.db-*

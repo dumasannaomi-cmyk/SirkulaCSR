@@ -10,6 +10,7 @@
 .DS_Store
 /build
 /server/build/
+/server/target/
 /server/data/
 /captures
 .externalNativeBuild
