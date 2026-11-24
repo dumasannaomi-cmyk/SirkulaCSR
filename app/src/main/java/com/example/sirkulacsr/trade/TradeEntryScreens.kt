@@ -117,7 +117,7 @@ internal fun NewListing(role: TradeRole, submit: (ListingDraft) -> Unit) {
 }
 
 @Composable
-internal fun ImpactScreen(modifier: Modifier) {
+internal fun ImpactPage(modifier: Modifier) {
     AndroidView(
         factory = { context ->
             WebView(context).apply {

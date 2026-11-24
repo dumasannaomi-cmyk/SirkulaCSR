@@ -150,7 +150,7 @@ internal fun TradeApp(initialRole: TradeRole, signOut: () -> Unit) {
                     role, if (stack.size > 1) ::back else null,
                     if (screen == TradeScreen.CHAT) if (role == TradeRole.MITRA) "GC" else "MD" else null)
                 if (screen == TradeScreen.IMPACT) {
-                    ImpactScreen(Modifier.weight(1f))
+                    ImpactPage(Modifier.weight(1f))
                 } else {
                     Column(Modifier.weight(1f).fillMaxWidth().background(TradeBackground)
                         .verticalScroll(scroll).padding(horizontal = 20.dp, vertical = 20.dp),
